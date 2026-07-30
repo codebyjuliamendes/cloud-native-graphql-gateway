@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import pinoHttp from 'pino-http';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
@@ -29,8 +30,13 @@ async function bootstrap() {
   await initDatabase();
 
   // Basic Middlewares
-  app.use(helmet());
-  app.use(cors());
+  try {
+    app.use(helmet());
+    app.use(cors());
+    app.use(compression());
+  } catch (err) {
+    logger.error(err, 'Failed to initialize security/performance middlewares');
+  }
   app.use(express.json());
   app.use(pinoHttp({ logger, autoLogging: false }));
   app.use(metricsMiddleware);

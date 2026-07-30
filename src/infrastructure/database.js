@@ -45,6 +45,11 @@ export const initDatabase = async () => {
         FOREIGN KEY (orderId) REFERENCES orders(id),
         FOREIGN KEY (productId) REFERENCES products(id)
       );
+
+      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      CREATE INDEX IF NOT EXISTS idx_orders_userid ON orders(userId);
+      CREATE INDEX IF NOT EXISTS idx_order_products_orderid ON order_products(orderId);
+      CREATE INDEX IF NOT EXISTS idx_order_products_productid ON order_products(productId);
     `);
 
     if (dbPath !== ':memory:') {
