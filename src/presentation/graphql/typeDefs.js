@@ -3,12 +3,14 @@ export const typeDefs = `#graphql
     id: ID!
     name: String!
     email: String!
+    isStale: Boolean
   }
 
   type Product {
     id: ID!
     name: String!
     price: Float!
+    isStale: Boolean
   }
 
   type Order {
@@ -16,6 +18,7 @@ export const typeDefs = `#graphql
     userId: ID!
     productIds: [ID!]!
     totalAmount: Float!
+    isStale: Boolean
   }
 
   type Query {

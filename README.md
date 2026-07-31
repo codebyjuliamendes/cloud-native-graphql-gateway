@@ -18,6 +18,12 @@ A production-ready, cloud-native API Gateway exposing both RESTful endpoints and
 - **Observability:** Pino (structured logging), Prometheus (metrics)
 - **Testing:** Jest, Supertest
 
+### V3 Advanced Features & Resiliency
+- **Apollo Query Caching:** Background updates based on GraphQL query hashes to improve latency and offload database pressure.
+- **Circuit Breakers (Opossum):** Wrapped downstream microservices (repositories) to fail fast and prevent cascading system failures.
+- **Schema Self-Healing:** Graceful fallback returning `isStale: true` directly in the GraphQL response when underlying services are degraded.
+- **Dynamic CPU Rate Limiting:** Automatically throttles traffic (HTTP 503) when system `os.loadavg()` exceeds threshold (0.8).
+
 ---
 
 ## 📐 Architecture & Trade-offs

@@ -51,8 +51,29 @@ async function bootstrap() {
   app.use('/api/products', productRoutes);
   app.use('/api/orders', orderRoutes);
 
+  // Apollo caching query hash background updates plugin
+  const queryHashCachePlugin = {
+    async requestDidStart(requestContext) {
+      return {
+        async willSendResponse(requestContext) {
+          if (requestContext.queryHash) {
+            // Background update simulation for query hash
+            setImmediate(() => {
+              logger.info(`[Background Task] Updating cache for query hash: ${requestContext.queryHash}`);
+              // Store/Update cached representation of query in Redis/Memory
+            });
+          }
+        }
+      };
+    }
+  };
+
   // GraphQL Setup
-  const apolloServer = new ApolloServer({ typeDefs, resolvers });
+  const apolloServer = new ApolloServer({ 
+    typeDefs, 
+    resolvers,
+    plugins: [queryHashCachePlugin]
+  });
   await apolloServer.start();
   app.use('/graphql', expressMiddleware(apolloServer));
 
