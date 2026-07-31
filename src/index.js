@@ -51,6 +51,36 @@ async function bootstrap() {
   app.use('/api/products', productRoutes);
   app.use('/api/orders', orderRoutes);
 
+  // Swagger Documentation
+  app.get('/swagger.json', (req, res) => {
+    import('path').then(path => {
+      res.sendFile(path.default.join(process.cwd(), 'src', 'swagger.json'));
+    });
+  });
+  app.get('/api-docs', (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">
+      <title>API Documentation</title>
+    </head>
+    <body>
+      <div id="swagger-ui"></div>
+      <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
+      <script>
+        window.onload = () => {
+          window.ui = SwaggerUIBundle({
+            url: '/swagger.json',
+            dom_id: '#swagger-ui',
+          });
+        };
+      </script>
+    </body>
+    </html>
+    `);
+  });
+
   // Apollo caching query hash background updates plugin
   const queryHashCachePlugin = {
     async requestDidStart(requestContext) {

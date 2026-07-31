@@ -113,3 +113,8 @@ docker-compose up --build
 
 ## 📝 License
 Distributed under the MIT License. See `LICENSE` for more information.
+
+## V4 Upgrades
+- Added Kubernetes Manifests (Deployment, Service, Ingress).
+- Configured GitHub Actions CI/CD Pipeline.
+- Added Swagger UI at /api-docs.

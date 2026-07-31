@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-native-graphql-gateway
+  labels:
+    app: cloud-native-graphql-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cloud-native-graphql-gateway
+  template:
+    metadata:
+      labels:
+        app: cloud-native-graphql-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: my-registry/cloud-native-graphql-gateway:latest
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
