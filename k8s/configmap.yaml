@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-native-graphql-gateway-config
+data:
+  NODE_ENV: production
+  PORT: '3000'
+  LOG_LEVEL: info
+  DB_FILE: /app/data/gateway.db
+  # One proxy (the ingress controller) sits in front of the pod.
+  TRUST_PROXY: '1'
+  GRAPHQL_INTROSPECTION: 'false'
+  GRAPHQL_MAX_DEPTH: '7'
+  GRAPHQL_MAX_COMPLEXITY: '1000'
