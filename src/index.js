@@ -1,122 +1,101 @@
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import compression from 'compression';
-import pinoHttp from 'pino-http';
-import { ApolloServer } from '@apollo/server';
-import { expressMiddleware } from '@apollo/server/express4';
-import { env } from './config/env.js';
-import { logger } from './config/logger.js';
-import { metricsMiddleware, metricsEndpoint } from './config/metrics.js';
-import { rateLimiter } from './presentation/middlewares/rateLimiter.js';
-import { errorHandler } from './presentation/middlewares/errorHandler.js';
-import { initDatabase } from './infrastructure/database.js';
+import http from 'node:http';
+import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
+import { createApp } from './app.js';
+import { ConfigError, loadConfig } from './config/env.js';
+import { createLogger } from './config/logger.js';
+import { createMetrics } from './config/metrics.js';
+import { createContainer } from './infrastructure/container.js';
+import { createDatabase } from './infrastructure/database.js';
 
-// REST Routes
-import healthRoutes from './presentation/rest/health.js';
-import userRoutes from './presentation/rest/userRoutes.js';
-import productRoutes from './presentation/rest/productRoutes.js';
-import orderRoutes from './presentation/rest/orderRoutes.js';
-
-// GraphQL Schema & Resolvers
-import { typeDefs } from './presentation/graphql/typeDefs.js';
-import { resolvers } from './presentation/graphql/resolvers.js';
-
-async function bootstrap() {
-  const app = express();
-
-  // Initialize DB
-  await initDatabase();
-
-  // Basic Middlewares
+async function main() {
+  let config;
   try {
-    app.use(helmet());
-    app.use(cors());
-    app.use(compression());
-  } catch (err) {
-    logger.error(err, 'Failed to initialize security/performance middlewares');
+    config = loadConfig();
+  } catch (error) {
+    if (error instanceof ConfigError) {
+      console.error(error.message); // eslint-disable-line no-console
+      process.exit(1);
+    }
+    throw error;
   }
-  app.use(express.json());
-  app.use(pinoHttp({ logger, autoLogging: false }));
-  app.use(metricsMiddleware);
-  app.use(rateLimiter);
 
-  // Observability endpoints
-  app.get('/metrics', metricsEndpoint);
-  app.use('/', healthRoutes);
+  const logger = createLogger(config);
+  if (!config.auth.enabled) {
+    logger.warn('Authentication is DISABLED: every API route is public. Set API_KEYS to enable it.');
+  }
 
-  // REST API
-  app.use('/api/users', userRoutes);
-  app.use('/api/products', productRoutes);
-  app.use('/api/orders', orderRoutes);
-
-  // Swagger Documentation
-  app.get('/swagger.json', (req, res) => {
-    import('path').then(path => {
-      res.sendFile(path.default.join(process.cwd(), 'src', 'swagger.json'));
-    });
-  });
-  app.get('/api-docs', (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css">
-      <title>API Documentation</title>
-    </head>
-    <body>
-      <div id="swagger-ui"></div>
-      <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
-      <script>
-        window.onload = () => {
-          window.ui = SwaggerUIBundle({
-            url: '/swagger.json',
-            dom_id: '#swagger-ui',
-          });
-        };
-      </script>
-    </body>
-    </html>
-    `);
+  const metrics = createMetrics();
+  const database = await createDatabase({ file: config.dbFile, logger });
+  const container = createContainer({
+    database,
+    config,
+    logger,
+    onBreakerStateChange: metrics.setBreakerState,
   });
 
-  // Apollo caching query hash background updates plugin
-  const queryHashCachePlugin = {
-    async requestDidStart(requestContext) {
-      return {
-        async willSendResponse(requestContext) {
-          if (requestContext.queryHash) {
-            // Background update simulation for query hash
-            setImmediate(() => {
-              logger.info(`[Background Task] Updating cache for query hash: ${requestContext.queryHash}`);
-              // Store/Update cached representation of query in Redis/Memory
-            });
-          }
-        }
-      };
+  const server = http.createServer();
+  server.requestTimeout = config.requestTimeoutMs;
+  server.headersTimeout = Math.min(config.requestTimeoutMs, 60_000);
+  server.keepAliveTimeout = 65_000; // above common load balancer idle timeouts
+
+  let shuttingDown = false;
+  const { app, apollo } = await createApp({
+    config,
+    logger,
+    container,
+    metrics,
+    apolloPlugins: [ApolloServerPluginDrainHttpServer({ httpServer: server })],
+    isShuttingDown: () => shuttingDown,
+  });
+  server.on('request', app);
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(config.port, config.host, resolve);
+  });
+  logger.info(
+    {
+      port: config.port,
+      env: config.nodeEnv,
+      introspection: config.graphql.introspection,
+      db: config.dbFile ?? ':memory:',
+    },
+    'Server listening',
+  );
+
+  const shutdown = async (signal, exitCode = 0) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info({ signal }, 'Shutting down gracefully');
+    const forceExit = setTimeout(() => {
+      logger.error('Graceful shutdown timed out; forcing exit');
+      process.exit(1);
+    }, config.shutdownTimeoutMs);
+    forceExit.unref();
+    try {
+      // Stops accepting connections and drains in-flight requests.
+      await apollo.stop();
+      await new Promise((resolve) => (server.listening ? server.close(() => resolve()) : resolve()));
+      container.shutdown();
+      database.close();
+      logger.info('Shutdown complete');
+      process.exit(exitCode);
+    } catch (error) {
+      logger.error({ err: error }, 'Error during shutdown');
+      process.exit(1);
     }
   };
 
-  // GraphQL Setup
-  const apolloServer = new ApolloServer({ 
-    typeDefs, 
-    resolvers,
-    plugins: [queryHashCachePlugin]
-  });
-  await apolloServer.start();
-  app.use('/graphql', expressMiddleware(apolloServer));
-
-  // Error Handler
-  app.use(errorHandler);
-
-  app.listen(env.PORT, () => {
-    logger.info(`Server listening on port ${env.PORT}`);
-    logger.info(`GraphQL endpoint: http://localhost:${env.PORT}/graphql`);
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('unhandledRejection', (reason) => logger.error({ err: reason }, 'Unhandled promise rejection'));
+  process.on('uncaughtException', (error) => {
+    logger.fatal({ err: error }, 'Uncaught exception');
+    shutdown('uncaughtException', 1);
   });
 }
 
-bootstrap().catch((err) => {
-  logger.error(err, 'Failed to start server');
+main().catch((error) => {
+  console.error('Failed to start server', error); // eslint-disable-line no-console
   process.exit(1);
 });

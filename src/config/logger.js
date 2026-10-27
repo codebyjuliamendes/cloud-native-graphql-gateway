@@ -1,12 +1,15 @@
 import pino from 'pino';
-import { env } from './env.js';
 
-export const logger = pino({
-  level: env.LOG_LEVEL,
-  formatters: {
-    level: (label) => {
-      return { level: label };
+/** @param {{ logLevel: string }} config */
+export function createLogger(config) {
+  return pino({
+    level: config.logLevel,
+    base: { service: 'cloud-native-graphql-gateway' },
+    formatters: { level: (label) => ({ level: label }) },
+    timestamp: pino.stdTimeFunctions.isoTime,
+    redact: {
+      paths: ['req.headers.authorization', 'req.headers["x-api-key"]', 'req.headers.cookie'],
+      censor: '[REDACTED]',
     },
-  },
-  timestamp: pino.stdTimeFunctions.isoTime,
-});
+  });
+}
