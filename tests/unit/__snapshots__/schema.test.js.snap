@@ -1,0 +1,61 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`GraphQL schema matches the published contract (update the snapshot only for intended changes) 1`] = `
+"type Mutation {
+  createOrder(productIds: [ID!]!, userId: ID!): Order!
+  createProduct(name: String!, price: Float!): Product!
+  createUser(email: String!, name: String!): User!
+}
+
+type Order {
+  id: ID!
+  isStale: Boolean
+
+  """Product ids in the order; a repeated id means multiple units."""
+  productIds: [ID!]!
+
+  """
+  Products in the order, in the same order (and multiplicity) as productIds.
+  """
+  products: [Product!]!
+  totalAmount: Float!
+  user: User
+  userId: ID!
+}
+
+type Product {
+  id: ID!
+  isStale: Boolean
+  name: String!
+  price: Float!
+}
+
+type Query {
+  order(id: ID!): Order
+
+  """Paginated list (limit 1-100, default 50)."""
+  orders(limit: Int = 50, offset: Int = 0): [Order!]!
+  product(id: ID!): Product
+
+  """Paginated list (limit 1-100, default 50)."""
+  products(limit: Int = 50, offset: Int = 0): [Product!]!
+  user(id: ID!): User
+
+  """Paginated list (limit 1-100, default 50)."""
+  users(limit: Int = 50, offset: Int = 0): [User!]!
+}
+
+"""
+A customer. \`isStale\` is true when the value was served from the
+circuit-breaker cache because the data source is degraded.
+"""
+type User {
+  email: String!
+  id: ID!
+  isStale: Boolean
+  name: String!
+
+  """Orders placed by this user (most recent last)."""
+  orders(limit: Int = 20): [Order!]!
+}"
+`;
