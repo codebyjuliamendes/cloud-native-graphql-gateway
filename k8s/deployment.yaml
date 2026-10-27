@@ -5,7 +5,11 @@ metadata:
   labels:
     app: cloud-native-graphql-gateway
 spec:
-  replicas: 2
+  # The embedded SQLite database lives on a ReadWriteOnce volume, so only one
+  # replica can own it. Scale out only after moving to a shared database.
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: cloud-native-graphql-gateway
@@ -13,28 +17,79 @@ spec:
     metadata:
       labels:
         app: cloud-native-graphql-gateway
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '3000'
+        prometheus.io/path: /metrics
     spec:
+      terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
-          image: my-registry/cloud-native-graphql-gateway:latest
+          # Replace with your registry/image and pin a version or digest.
+          image: my-registry/cloud-native-graphql-gateway:2.0.0
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 3000
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: cloud-native-graphql-gateway-config
+          env:
+            - name: API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-native-graphql-gateway-secrets
+                  key: API_KEYS
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: 100m
+              memory: 128Mi
             limits:
-              cpu: "250m"
-              memory: "256Mi"
-          readinessProbe:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+          startupProbe:
             httpGet:
               path: /health
-              port: 3000
-            initialDelaySeconds: 5
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
             periodSeconds: 10
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /health
-              port: 3000
-            initialDelaySeconds: 15
+              port: http
             periodSeconds: 20
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              # Give the load balancer time to stop routing before SIGTERM.
+              sleep:
+                seconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: cloud-native-graphql-gateway-data
+        - name: tmp
+          emptyDir: {}

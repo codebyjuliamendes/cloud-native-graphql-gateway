@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run test:coverage
+      - run: npm audit --omit=dev --audit-level=high
+
+  docker:
+    name: Docker image and smoke test
+    runs-on: ubuntu-latest
+    needs: quality
+    env:
+      API_KEY: ci-smoke-key-0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t cloud-native-graphql-gateway:ci .
+      - name: Validate compose file
+        run: API_KEYS=x GRAFANA_ADMIN_PASSWORD=x docker compose config --quiet
+      - name: Start container
+        run: |
+          docker run -d --name gateway -p 3000:3000 --read-only --tmpfs /tmp \
+            -e API_KEYS="$API_KEY" cloud-native-graphql-gateway:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3000/ready && break
+            sleep 1
+          done
+          curl -fsS http://localhost:3000/ready
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/users)" = 401
+          curl -fsS -H "Authorization: Bearer $API_KEY" -H 'content-type: application/json' \
+            -d '{"query":"mutation { createUser(name: \"CI\", email: \"ci@example.com\") { id } }"}' \
+            http://localhost:3000/graphql | grep -q '"id"'
+          curl -fsS -H "Authorization: Bearer $API_KEY" http://localhost:3000/api/users | grep -q 'ci@example.com'
+          # Introspection is disabled in production
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $API_KEY" \
+            -H 'content-type: application/json' -d '{"query":"{ __schema { types { name } } }"}' \
+            http://localhost:3000/graphql)" = 400
+      - name: Wait for Docker HEALTHCHECK
+        run: |
+          for i in $(seq 1 20); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' gateway)
+            [ "$status" = healthy ] && exit 0
+            sleep 3
+          done
+          echo "container health: $status"; exit 1
+      - name: Graceful shutdown
+        run: |
+          docker stop -t 15 gateway
+          test "$(docker inspect -f '{{.State.ExitCode}}' gateway)" = 0
+      - name: Container logs
+        if: always()
+        run: docker logs gateway || true

@@ -1,4 +1,5 @@
 import { User } from '../../domain/User.js';
+import { normalizePage } from '../pagination.js';
 
 export class UserUseCases {
   constructor(userRepository) {
@@ -7,14 +8,14 @@ export class UserUseCases {
 
   async createUser(userData) {
     const user = new User(userData);
-    return await this.userRepository.save(user);
+    return this.userRepository.save(user);
   }
 
-  async getAllUsers() {
-    return await this.userRepository.findAll();
+  async getAllUsers(page) {
+    return this.userRepository.findAll(normalizePage(page));
   }
 
   async getUserById(id) {
-    return await this.userRepository.findById(id);
+    return this.userRepository.findById(id);
   }
 }

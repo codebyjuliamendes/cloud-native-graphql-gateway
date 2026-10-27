@@ -2,17 +2,52 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: cloud-native-graphql-gateway-ingress
-  annotations:
-    kubernetes.io/ingress.class: "nginx"
 spec:
+  ingressClassName: nginx
   rules:
     - host: gateway.local
       http:
+        # Only public routes are exposed; /metrics and /ready stay in-cluster.
         paths:
-          - path: /
+          - path: /graphql
+            pathType: Exact
+            backend:
+              service:
+                name: cloud-native-graphql-gateway-svc
+                port:
+                  name: http
+          - path: /api
             pathType: Prefix
             backend:
               service:
                 name: cloud-native-graphql-gateway-svc
                 port:
-                  number: 80
+                  name: http
+          - path: /api-docs
+            pathType: Prefix
+            backend:
+              service:
+                name: cloud-native-graphql-gateway-svc
+                port:
+                  name: http
+          - path: /swagger.json
+            pathType: Exact
+            backend:
+              service:
+                name: cloud-native-graphql-gateway-svc
+                port:
+                  name: http
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: cloud-native-graphql-gateway-svc
+                port:
+                  name: http
+          - path: /
+            pathType: Exact
+            backend:
+              service:
+                name: cloud-native-graphql-gateway-svc
+                port:
+                  name: http

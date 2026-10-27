@@ -1,16 +1,17 @@
-
 export function queryAll(db, sql, params = []) {
   const stmt = db.prepare(sql);
-  if (params.length) stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
+  try {
+    if (params.length) stmt.bind(params);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    return rows;
+  } finally {
+    stmt.free();
+  }
 }
 
 export function queryOne(db, sql, params = []) {
-  const rows = queryAll(db, sql, params);
-  return rows[0] || null;
+  return queryAll(db, sql, params)[0] ?? null;
 }
 
 export function runSql(db, sql, params = []) {
@@ -21,10 +22,20 @@ export function runSql(db, sql, params = []) {
 export function runTransaction(db, callback) {
   db.run('BEGIN TRANSACTION');
   try {
-    callback();
+    const result = callback();
     db.run('COMMIT');
+    return result;
   } catch (error) {
     db.run('ROLLBACK');
     throw error;
   }
+}
+
+/** Builds `?, ?, ?` for an IN (...) clause. */
+export function placeholders(count) {
+  return Array.from({ length: count }, () => '?').join(', ');
+}
+
+export function isUniqueViolation(error) {
+  return /UNIQUE constraint failed/i.test(error?.message ?? '');
 }
