@@ -1,4 +1,5 @@
 import { Product } from '../../domain/Product.js';
+import { normalizePage } from '../pagination.js';
 
 export class ProductUseCases {
   constructor(productRepository) {
@@ -7,14 +8,14 @@ export class ProductUseCases {
 
   async createProduct(productData) {
     const product = new Product(productData);
-    return await this.productRepository.save(product);
+    return this.productRepository.save(product);
   }
 
-  async getAllProducts() {
-    return await this.productRepository.findAll();
+  async getAllProducts(page) {
+    return this.productRepository.findAll(normalizePage(page));
   }
 
   async getProductById(id) {
-    return await this.productRepository.findById(id);
+    return this.productRepository.findById(id);
   }
 }
